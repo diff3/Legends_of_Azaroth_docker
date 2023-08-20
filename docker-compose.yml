@@ -1,0 +1,107 @@
+version: '3.9'
+
+x-loact_548-shared-conf: &loact_548-shared-conf
+  environment:
+      - TZ=Europe/Stockholm
+  volumes:
+    - "./etc:/opt/etc:rw"
+    - "/etc/localtime:/etc/localtime:ro"
+    - "/etc/timezone:/etc/timezone:ro"
+    - "./server:/opt/server:rw"
+    - "${WOW_PATH}:/opt/wow:rw"
+  restart: unless-stopped
+  tty: true
+
+x-build-shared-conf: &build-shared-conf
+  dockerfile: Dockerfile
+  args:
+    USER_ID: ${USER_ID:-0}
+    GROUP_ID: ${GROUP_ID:-0}
+
+services:
+  authserver:
+    image: loact_548:authserver
+    container_name: loact_548-authserver
+    build:
+      context: containers/authserver
+      <<: *build-shared-conf
+    <<: *loact_548-shared-conf
+    ports:
+      - "3724:3724"
+
+  compile:
+    image: loact_548:compile
+    env_file:
+      - ./env/compile.env
+      - ./env/mariadb.env
+    container_name: loact_548-compile
+    build:
+      context: containers/compile
+      <<: *build-shared-conf
+    <<: *loact_548-shared-conf
+    restart: "no"
+    profiles:
+      - compile
+
+  extractor:
+    image: loact_548:extractor
+    container_name: loact_548-extractor
+    build:
+      context: containers/extractor
+      <<: *build-shared-conf
+    <<: *loact_548-shared-conf
+    volumes:
+      - "/tmp:/tmp"
+      - "./server:/opt/server:rw"
+      - "${WOW_PATH}:/opt/wow:rw"
+      - "./etc:/opt/etc:rw"
+    privileged: true
+    ulimits:
+      core: -1
+    restart: "no"
+    profiles:
+      - extractor
+
+  mariadb:
+    image: loact_548:mariadb
+    env_file:
+      - ./env/mariadb.env
+    container_name: loact_548-mariadb
+    hostname: loact_548
+    build:
+      context: containers/mariadb
+      <<: *build-shared-conf
+    <<: *loact_548-shared-conf
+    command: --max_allowed_packet=32505856
+    # ports:
+    #  - "3306:3306"
+
+  phpmyadmin:
+    image: phpmyadmin
+    ports:
+      - "8080:80"
+    environment:
+      - PMA_HOST=loact_548db
+      - PMA_USER=root
+      - PMA_PASSWORD=pwd
+    restart: "no"
+    depends_on:
+      - mariadb
+    profiles:
+      - dev
+
+  worldserver:
+    image: loact_548:worldserver
+    container_name: loact_548-worldserver
+    build:
+      context: containers/worldserver
+      <<: *build-shared-conf
+    <<: *loact_548-shared-conf
+    ports:
+      - "3443:3443"
+      - "8085:8085"
+    # - "8086:8086"
+
+networks:
+  default:
+    name: loact_548-network
